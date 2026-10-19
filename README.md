@@ -31,25 +31,23 @@ PluginEditor     — UI: waveform displays, editable value boxes, Win95 look
 
 ### Prerequisites
 
-1. **JUCE Framework** 8.x
-   ```bash
-   git clone https://github.com/juce-framework/JUCE.git ~/JUCE
-   ```
-
-2. **CMake** 3.22 or later
-
-3. **C++ compiler** with C++17 support:
+1. **CMake** 3.22 or later, and **git**
+2. **C++ compiler** with C++17 support:
    - macOS: Xcode command line tools (`xcode-select --install`)
-   - Windows: Visual Studio 2019+ with C++ workload
+   - Windows: Visual Studio 2022 with the C++ workload
+
+JUCE 8.0.12 is downloaded automatically during configuration.
 
 ### Build
 
 ```bash
-cmake -B build -DJUCE_PATH=~/JUCE -DCMAKE_BUILD_TYPE=Release
+cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ```
 
-On macOS this produces a universal (arm64 + x86_64) binary for macOS 12 and later.
+To build against a local JUCE checkout instead, add `-DJUCE_PATH=/path/to/JUCE` to the first command.
+
+On macOS this produces a universal (arm64 + x86_64) binary for macOS 12 and later, ad-hoc signed.
 
 ### Install
 

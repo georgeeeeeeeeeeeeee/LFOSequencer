@@ -6,9 +6,19 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Build universal binary" FORCE)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version" FORCE)
 
-# Add JUCE - adjust this path to where you cloned JUCE
-# e.g. ~/JUCE or /usr/local/JUCE
-add_subdirectory(${JUCE_PATH} ${CMAKE_BINARY_DIR}/juce EXCLUDE_FROM_ALL)
+# JUCE: a pinned release is downloaded by default.
+# Pass -DJUCE_PATH=/path/to/JUCE to build against a local copy instead.
+if(DEFINED JUCE_PATH)
+    add_subdirectory(${JUCE_PATH} ${CMAKE_BINARY_DIR}/juce EXCLUDE_FROM_ALL)
+else()
+    include(FetchContent)
+    FetchContent_Declare(JUCE
+        GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
+        GIT_TAG        8.0.12
+        GIT_SHALLOW    TRUE
+    )
+    FetchContent_MakeAvailable(JUCE)
+endif()
 
 juce_add_plugin(LFOSequencer
     COMPANY_NAME "LeverStudios"
@@ -75,6 +85,9 @@ if(APPLE)
         # plutil -convert xml1 reformats the plist and inserts version="1.0" on the <plist> tag
         COMMAND plutil -convert xml1
                 "$<TARGET_BUNDLE_DIR:LFOSequencer_VST3>/Contents/Info.plist"
+
+        # Ad-hoc sign the whole bundle last, after every change to its contents
+        COMMAND codesign --force --deep --sign - "$<TARGET_BUNDLE_DIR:LFOSequencer_VST3>"
 
         COMMENT "Patching Info.plist for VST3 compliance"
         VERBATIM
