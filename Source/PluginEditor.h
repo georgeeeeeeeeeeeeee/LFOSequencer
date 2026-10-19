@@ -47,6 +47,8 @@ public:
     void tick(); // called by editor timer to refresh live displays
 
 private:
+    void refreshFromChannel();
+
     LFOChannel& ch;
     int         index;
 

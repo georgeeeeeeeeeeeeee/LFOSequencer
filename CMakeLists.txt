@@ -12,7 +12,7 @@ add_subdirectory(${JUCE_PATH} ${CMAKE_BINARY_DIR}/juce EXCLUDE_FROM_ALL)
 
 juce_add_plugin(LFOSequencer
     COMPANY_NAME "LeverStudios"
-    COMPANY_COPYRIGHT "Copyright © 2026 Lever Studios. All rights reserved."
+    COMPANY_COPYRIGHT "Copyright © 2026 Lever Studios. Licensed under the GNU AGPL v3."
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT TRUE
@@ -22,7 +22,7 @@ juce_add_plugin(LFOSequencer
     PLUGIN_CODE Lfos
     FORMATS VST3 Standalone
     PRODUCT_NAME "LFO Sequencer"
-    DESCRIPTION "8-channel LFO to MIDI sequencer with multiple wave shapes"
+    DESCRIPTION "4-channel LFO to MIDI sequencer with multiple wave shapes"
 )
 
 juce_generate_juce_header(LFOSequencer)
@@ -56,24 +56,27 @@ target_link_libraries(LFOSequencer
         juce::juce_recommended_warning_flags
 )
 
-add_custom_command(TARGET LFOSequencer_VST3 POST_BUILD
-    # Strip quarantine so Gatekeeper doesn't block the bundle
-    COMMAND xattr -cr "$<TARGET_BUNDLE_DIR:LFOSequencer_VST3>"
+# macOS-only bundle fixes (xattr, PlistBuddy and plutil don't exist on Windows)
+if(APPLE)
+    add_custom_command(TARGET LFOSequencer_VST3 POST_BUILD
+        # Strip quarantine so Gatekeeper doesn't block the bundle
+        COMMAND xattr -cr "$<TARGET_BUNDLE_DIR:LFOSequencer_VST3>"
 
-    # Patch Info.plist — add missing compliance keys
-    # (|| true suppresses "key already exists" errors on incremental builds)
-    COMMAND /usr/libexec/PlistBuddy
-            -c "Add :CFBundleDevelopmentRegion string en"
-            -c "Add :CFBundleInfoDictionaryVersion string 6.0"
-            -c "Set :NSHumanReadableCopyright Copyright © 2026 Lever Studios. All rights reserved."
-            -c "Delete :CFBundleIconFile"
-            "$<TARGET_BUNDLE_DIR:LFOSequencer_VST3>/Contents/Info.plist"
-            || true
+        # Patch Info.plist — add missing compliance keys
+        # (|| true suppresses "key already exists" errors on incremental builds)
+        COMMAND /usr/libexec/PlistBuddy
+                -c "Add :CFBundleDevelopmentRegion string en"
+                -c "Add :CFBundleInfoDictionaryVersion string 6.0"
+                -c "Set :NSHumanReadableCopyright Copyright © 2026 Lever Studios. Licensed under the GNU AGPL v3."
+                -c "Delete :CFBundleIconFile"
+                "$<TARGET_BUNDLE_DIR:LFOSequencer_VST3>/Contents/Info.plist"
+                || true
 
-    # plutil -convert xml1 reformats the plist and inserts version="1.0" on the <plist> tag
-    COMMAND plutil -convert xml1
-            "$<TARGET_BUNDLE_DIR:LFOSequencer_VST3>/Contents/Info.plist"
+        # plutil -convert xml1 reformats the plist and inserts version="1.0" on the <plist> tag
+        COMMAND plutil -convert xml1
+                "$<TARGET_BUNDLE_DIR:LFOSequencer_VST3>/Contents/Info.plist"
 
-    COMMENT "Patching Info.plist for VST3 compliance"
-    VERBATIM
-)
+        COMMENT "Patching Info.plist for VST3 compliance"
+        VERBATIM
+    )
+endif()

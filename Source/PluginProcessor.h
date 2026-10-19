@@ -12,13 +12,14 @@ public:
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    void processBlockBypassed(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
     const juce::String getName() const override { return JucePlugin_Name; }
 
-    bool acceptsMidi()  const override { return true; }  // needed for MIDI learn
+    bool acceptsMidi()  const override { return true; }  // input is discarded; kept so hosts list the plugin as before
     bool producesMidi() const override { return true; }
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
@@ -43,7 +44,6 @@ public:
 
 private:
     LFOEngine engine;
-    int lastBlockSize = 512;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LFOSequencerProcessor)
 };

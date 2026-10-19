@@ -67,6 +67,11 @@ static int parseNoteInput(const juce::String& s)
     return juce::jlimit(0, 127, (oct + 1) * 12 + semitone);
 }
 
+static juce::String phaseText(float offset)
+{
+    return juce::String(juce::roundToInt(offset * 360.0f)) + juce::String::charToString(0x00B0);
+}
+
 //==============================================================================
 // Win95LookAndFeel
 //==============================================================================
@@ -231,24 +236,24 @@ void LFOWaveformDisplay::paint(juce::Graphics& g)
     for (int x = 0; x < pixW; ++x)
     {
         double phase1 = double(x) / double(pixW);
-        float  val    = ch.computeWaveValue(phase1);
+        float  val    = ch.displayValueAt(phase1);
         float  px     = (float)(inner.getX() + x);
         float  py     = midY - val * halfH;
         if (x == 0) path.startNewSubPath(px, py);
         else        path.lineTo(px, py);
     }
-    g.setColour(ch.active ? kNavy : kGray);
+    g.setColour(ch.active.load() ? kNavy : kGray);
     g.strokePath(path, juce::PathStrokeType(1.5f));
 
     // Red vertical playhead — sweeps left→right as phase goes 0→1
-    float playX = (float)inner.getX() + (float)ch.phase * (float)pixW;
+    float playX = (float)inner.getX() + (float)ch.displayPhase.load() * (float)pixW;
     g.setColour(juce::Colours::red);
     g.drawVerticalLine((int)playX, (float)inner.getY(), (float)inner.getBottom());
 
     // Red threshold line
-    if (ch.noteEnabled && ch.active)
+    if (ch.noteEnabled.load() && ch.active.load())
     {
-        float thrY = midY - ch.peakThreshold * halfH;
+        float thrY = midY - ch.peakThreshold.load() * halfH;
         g.setColour(juce::Colours::red.withAlpha(0.5f));
         g.drawHorizontalLine((int)thrY, (float)inner.getX(), (float)inner.getRight());
     }
@@ -263,21 +268,17 @@ LFOChannelPanel::LFOChannelPanel(LFOChannel& channel, int channelIndex)
     setOpaque(true);
     addAndMakeVisible(waveDisplay);
 
-    activeBtn.setToggleState(ch.active, juce::dontSendNotification);
     activeBtn.onClick = [this]{ ch.active = activeBtn.getToggleState(); };
     addAndMakeVisible(activeBtn);
 
     for (int i = 0; i < static_cast<int>(WaveShape::NumShapes); ++i)
         waveSelector.addItem(waveShapeName(static_cast<WaveShape>(i)), i + 1);
-    waveSelector.setSelectedId(static_cast<int>(ch.waveShape) + 1, juce::dontSendNotification);
     waveSelector.onChange = [this]{ ch.waveShape = static_cast<WaveShape>(waveSelector.getSelectedId() - 1); };
     addAndMakeVisible(waveSelector);
 
-    noteEnableBtn.setToggleState(ch.noteEnabled, juce::dontSendNotification);
     noteEnableBtn.onClick = [this]{ ch.noteEnabled = noteEnableBtn.getToggleState(); };
     addAndMakeVisible(noteEnableBtn);
 
-    ccEnableBtn.setToggleState(ch.ccEnabled, juce::dontSendNotification);
     ccEnableBtn.onClick = [this]{ ch.ccEnabled = ccEnableBtn.getToggleState(); };
     addAndMakeVisible(ccEnableBtn);
 
@@ -310,7 +311,7 @@ LFOChannelPanel::LFOChannelPanel(LFOChannel& channel, int channelIndex)
 
     // ── Row 1 ────────────────────────────────────────────────────────────────
     setupTitle(freqLabel,  "HZ");
-    setupBox(freqBox, juce::String(ch.frequencyHz, 3));
+    setupBox(freqBox, {});
     freqBox.onTextChange = [this]{
         float v = juce::jlimit(0.01f, 100.0f, freqBox.getText().getFloatValue());
         ch.frequencyHz = v;
@@ -318,25 +319,24 @@ LFOChannelPanel::LFOChannelPanel(LFOChannel& channel, int channelIndex)
     };
 
     setupTitle(phaseLabel, "PHASE");
-    setupBox(phaseBox, juce::String(juce::roundToInt(ch.phaseOffset * 360.0f)) + juce::String::charToString(0x00B0));
+    setupBox(phaseBox, {});
     phaseBox.onTextChange = [this]{
         float deg = juce::jlimit(0.0f, 360.0f,
             phaseBox.getText().retainCharacters("0123456789.-").getFloatValue());
         ch.phaseOffset = deg / 360.0f;
-        phaseBox.setText(juce::String(juce::roundToInt(deg)) + juce::String::charToString(0x00B0),
-                         juce::dontSendNotification);
+        phaseBox.setText(phaseText(deg / 360.0f), juce::dontSendNotification);
     };
 
     setupTitle(noteLabel,  "NOTE");
-    setupBox(noteBox, midiNoteName(ch.midiNote));
+    setupBox(noteBox, {});
     noteBox.onTextChange = [this]{
         int n = parseNoteInput(noteBox.getText());
         if (n >= 0) { ch.midiNote = n; noteBox.setText(midiNoteName(n), juce::dontSendNotification); }
-        else        { noteBox.setText(midiNoteName(ch.midiNote),         juce::dontSendNotification); }
+        else        { noteBox.setText(midiNoteName(ch.midiNote.load()),  juce::dontSendNotification); }
     };
 
     setupTitle(chanLabel,  "CHAN");
-    setupBox(chanBox, juce::String(ch.midiChannel));
+    setupBox(chanBox, {});
     chanBox.onTextChange = [this]{
         int v = juce::jlimit(1, 16, chanBox.getText().getIntValue());
         ch.midiChannel = v;
@@ -344,7 +344,7 @@ LFOChannelPanel::LFOChannelPanel(LFOChannel& channel, int channelIndex)
     };
 
     setupTitle(threshLabel, "THR");
-    setupBox(thrBox, juce::String(ch.peakThreshold, 2));
+    setupBox(thrBox, {});
     thrBox.onTextChange = [this]{
         float v = juce::jlimit(0.0f, 1.0f, thrBox.getText().getFloatValue());
         ch.peakThreshold = v;
@@ -353,7 +353,7 @@ LFOChannelPanel::LFOChannelPanel(LFOChannel& channel, int channelIndex)
 
     // ── Row 2 ────────────────────────────────────────────────────────────────
     setupTitle(ccLabel,      "CC#");
-    setupBox(ccBox, juce::String(ch.ccNumber));
+    setupBox(ccBox, {});
     ccBox.onTextChange = [this]{
         int v = juce::jlimit(0, 127, ccBox.getText().getIntValue());
         ch.ccNumber = v;
@@ -361,7 +361,7 @@ LFOChannelPanel::LFOChannelPanel(LFOChannel& channel, int channelIndex)
     };
 
     setupTitle(velMinLabel,  "V MIN");
-    setupBox(velMinBox, juce::String(ch.velocityMin));
+    setupBox(velMinBox, {});
     velMinBox.onTextChange = [this]{
         int v = juce::jlimit(0, 127, velMinBox.getText().getIntValue());
         ch.velocityMin = v;
@@ -369,7 +369,7 @@ LFOChannelPanel::LFOChannelPanel(LFOChannel& channel, int channelIndex)
     };
 
     setupTitle(velMaxLabel,  "V MAX");
-    setupBox(velMaxBox, juce::String(ch.velocityMax));
+    setupBox(velMaxBox, {});
     velMaxBox.onTextChange = [this]{
         int v = juce::jlimit(0, 127, velMaxBox.getText().getIntValue());
         ch.velocityMax = v;
@@ -377,7 +377,7 @@ LFOChannelPanel::LFOChannelPanel(LFOChannel& channel, int channelIndex)
     };
 
     setupTitle(noteLenLabel, "LEN MS");
-    setupBox(lenBox, juce::String(ch.noteLengthMs));
+    setupBox(lenBox, {});
     lenBox.onTextChange = [this]{
         int v = juce::jlimit(1, 5000, lenBox.getText().getIntValue());
         ch.noteLengthMs = v;
@@ -386,14 +386,45 @@ LFOChannelPanel::LFOChannelPanel(LFOChannel& channel, int channelIndex)
 
     setupTitle(velLabel, "VEL");
     setupBox(velBox, "--", false); // live display — updated by tick()
+
+    refreshFromChannel();
+}
+
+// Show the channel's current values — they can also change from Spread or a session load
+void LFOChannelPanel::refreshFromChannel()
+{
+    auto show = [](juce::Label& box, const juce::String& text)
+    {
+        if (!box.isBeingEdited())
+            box.setText(text, juce::dontSendNotification);
+    };
+
+    activeBtn.setToggleState(ch.active.load(), juce::dontSendNotification);
+    waveSelector.setSelectedId(static_cast<int>(ch.waveShape.load()) + 1, juce::dontSendNotification);
+    noteEnableBtn.setToggleState(ch.noteEnabled.load(), juce::dontSendNotification);
+    ccEnableBtn.setToggleState(ch.ccEnabled.load(), juce::dontSendNotification);
+
+    show(freqBox,   juce::String(ch.frequencyHz.load(), 3));
+    show(phaseBox,  phaseText(ch.phaseOffset.load()));
+    show(noteBox,   midiNoteName(ch.midiNote.load()));
+    show(chanBox,   juce::String(ch.midiChannel.load()));
+    show(thrBox,    juce::String(ch.peakThreshold.load(), 2));
+    show(ccBox,     juce::String(ch.ccNumber.load()));
+    show(velMinBox, juce::String(ch.velocityMin.load()));
+    show(velMaxBox, juce::String(ch.velocityMax.load()));
+    show(lenBox,    juce::String(ch.noteLengthMs.load()));
 }
 
 void LFOChannelPanel::tick()
 {
+    refreshFromChannel();
+
     if (!velBox.isBeingEdited())
     {
-        float norm = (ch.currentValue + 1.0f) * 0.5f;
-        int   vel  = ch.velocityMin + static_cast<int>(norm * (float)(ch.velocityMax - ch.velocityMin));
+        const int velMin = ch.velocityMin.load();
+        const int velMax = ch.velocityMax.load();
+        float norm = (ch.displayValue.load() + 1.0f) * 0.5f;
+        int   vel  = velMin + static_cast<int>(norm * (float)(velMax - velMin));
         velBox.setText(juce::String(juce::jlimit(1, 127, vel)), juce::dontSendNotification);
     }
 }
@@ -409,7 +440,7 @@ void LFOChannelPanel::paint(juce::Graphics& g)
 
     // Channel number badge on the left
     auto badge = bounds.reduced(2).removeFromLeft(19);
-    g.setColour(ch.active ? kNavy : kGray);
+    g.setColour(ch.active.load() ? kNavy : kGray);
     g.fillRect(badge);
     g.setColour(kWhite);
     g.setFont(juce::Font(juce::FontOptions().withHeight(11.0f).withStyle("Bold")));
@@ -481,13 +512,13 @@ LFOSequencerEditor::LFOSequencerEditor(LFOSequencerProcessor& p)
     };
 
     setupBtn(syncBtn);
-    syncBtn.onClick = [this]{ processorRef.getEngine().syncAll(); };
+    syncBtn.onClick = [this]{ processorRef.getEngine().requestSync(); };
 
     setupBtn(spreadBtn);
-    spreadBtn.onClick = [this]{ processorRef.getEngine().spreadPhases(); repaint(); };
+    spreadBtn.onClick = [this]{ processorRef.getEngine().spreadPhases(); };
 
     setupBtn(resetBtn);
-    resetBtn.onClick = [this]{ processorRef.getEngine().resetAll(); };
+    resetBtn.onClick = [this]{ processorRef.getEngine().requestReset(); };
 
     startTimerHz(10);
     setOpaque(true);

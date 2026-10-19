@@ -28,30 +28,21 @@ public:
             ch.reset();
     }
 
-    void processBlock(juce::MidiBuffer& midiOut, int numSamples,
-                      const juce::MidiBuffer* midiIn = nullptr)
+    void processBlock(juce::MidiBuffer& midiOut, int numSamples)
     {
-        // ── MIDI Learn: scan incoming MIDI for CC to auto-assign ──
-        if (midiIn != nullptr)
+        // ── Sync / Reset requested by the UI ──
+        const bool resetNow = resetRequested.exchange(false);
+        const bool syncNow  = syncRequested.exchange(false);
+        for (auto& ch : channels)
         {
-            for (const auto metadata : *midiIn)
+            if (resetNow)
             {
-                auto msg = metadata.getMessage();
-                if (msg.isController())
-                {
-                    for (auto& ch : channels)
-                    {
-                        if (ch.midiLearnActive)
-                        {
-                            ch.ccNumber = msg.getControllerNumber();
-                            ch.midiChannel = msg.getChannel();
-                            ch.midiLearnActive = false;
-                            midiLearnCompleted = true;
-                            midiLearnCompletedChannel = static_cast<int>(&ch - channels);
-                            break; // first learning channel wins
-                        }
-                    }
-                }
+                ch.releaseNote(midiOut, 0);
+                ch.reset();
+            }
+            else if (syncNow)
+            {
+                ch.sync(midiOut, 0);
             }
         }
 
@@ -61,26 +52,23 @@ public:
             for (auto& ch : channels)
                 ch.processSample(sampleRate, midiOut, sample);
         }
+
+        for (auto& ch : channels)
+            ch.publishDisplay();
     }
+
+    void releaseAllNotes(juce::MidiBuffer& midiOut)
+    {
+        for (auto& ch : channels)
+            ch.releaseNote(midiOut, 0);
+    }
+
+    // UI thread: carried out on the audio thread at the start of the next block
 
     // Sync: reset all phases to zero (offsets preserved)
-    void syncAll()
-    {
-        for (auto& ch : channels)
-        {
-            ch.phase = 0.0;
-            ch.prevValue = 0.0f;
-            ch.currentValue = ch.computeWaveValue(static_cast<double>(ch.phaseOffset));
-            ch.noteIsOn = false;
-            ch.noteOffCountdown = 0;
-        }
-    }
+    void requestSync()  { syncRequested.store(true); }
 
-    void resetAll()
-    {
-        for (auto& ch : channels)
-            ch.reset();
-    }
+    void requestReset() { resetRequested.store(true); }
 
     // Auto-spread: evenly distribute phase offsets across active channels
     // 4 active → 0°, 90°, 180°, 270°
@@ -116,10 +104,8 @@ public:
 
     LFOChannel channels[NUM_CHANNELS];
 
-    // MIDI learn state (polled by UI — atomic for audio/UI thread safety)
-    std::atomic<bool> midiLearnCompleted { false };
-    std::atomic<int>  midiLearnCompletedChannel { -1 };
-
 private:
     double sampleRate = 44100.0;
+    std::atomic<bool> syncRequested  { false };
+    std::atomic<bool> resetRequested { false };
 };
