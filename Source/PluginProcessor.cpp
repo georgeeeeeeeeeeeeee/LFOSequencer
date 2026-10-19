@@ -79,28 +79,55 @@ void LFOSequencerProcessor::setStateInformation(const void* data, int sizeInByte
     if (xml == nullptr || !xml->hasTagName("LFOSequencerState"))
         return;
 
+    // Only version 2 exists so far; newer files are read the same way, unknown attributes ignored
+
+    std::array<const juce::XmlElement*, LFOEngine::NUM_CHANNELS> channelXml {};
     for (auto* chXml : xml->getChildWithTagNameIterator("Channel"))
     {
         int idx = chXml->getIntAttribute("index", -1);
-        if (idx < 0 || idx >= LFOEngine::NUM_CHANNELS)
-            continue;
+        if (idx >= 0 && idx < LFOEngine::NUM_CHANNELS)
+            channelXml[(size_t) idx] = chXml;
+    }
 
-        // Clamp to the ranges the UI allows, so a damaged or hand-edited session can't produce invalid MIDI
-        auto& ch = engine.getChannel(idx);
-        ch.active        = chXml->getBoolAttribute("active", true);
-        ch.frequencyHz   = juce::jlimit(0.01f, 100.0f, static_cast<float>(chXml->getDoubleAttribute("frequencyHz", 0.1)));
+    // A missing channel or attribute falls back to the engine's own default for that channel.
+    // Values are clamped to the ranges the UI allows, and non-finite ones replaced, so a damaged
+    // or hand-edited session can't produce invalid MIDI.
+    static const LFOEngine defaults;
+
+    for (int i = 0; i < LFOEngine::NUM_CHANNELS; ++i)
+    {
+        const auto* chXml = channelXml[(size_t) i];
+        const auto& d  = defaults.getChannel(i);
+        auto& ch       = engine.getChannel(i);
+
+        auto getInt = [chXml](const char* name, int def)
+        {
+            return chXml != nullptr ? chXml->getIntAttribute(name, def) : def;
+        };
+        auto getBool = [chXml](const char* name, bool def)
+        {
+            return chXml != nullptr ? chXml->getBoolAttribute(name, def) : def;
+        };
+        auto getFloat = [chXml](const char* name, float def)
+        {
+            const double v = chXml != nullptr ? chXml->getDoubleAttribute(name, def) : def;
+            return std::isfinite(v) ? static_cast<float>(v) : def;
+        };
+
+        ch.active        = getBool("active", d.active.load());
+        ch.frequencyHz   = juce::jlimit(0.01f, 100.0f, getFloat("frequencyHz", d.frequencyHz.load()));
         ch.waveShape     = static_cast<WaveShape>(juce::jlimit(0, static_cast<int>(WaveShape::NumShapes) - 1,
-                                                               chXml->getIntAttribute("waveShape", 0)));
-        ch.midiNote      = juce::jlimit(0, 127, chXml->getIntAttribute("midiNote", 60));
-        ch.midiChannel   = juce::jlimit(1, 16,  chXml->getIntAttribute("midiChannel", 1));
-        ch.ccNumber      = juce::jlimit(0, 127, chXml->getIntAttribute("ccNumber", 1));
-        ch.peakThreshold = juce::jlimit(0.0f, 1.0f, static_cast<float>(chXml->getDoubleAttribute("peakThreshold", 0.95)));
-        ch.velocityMin   = juce::jlimit(0, 127, chXml->getIntAttribute("velocityMin", 64));
-        ch.velocityMax   = juce::jlimit(0, 127, chXml->getIntAttribute("velocityMax", 127));
-        ch.noteEnabled   = chXml->getBoolAttribute("noteEnabled", true);
-        ch.ccEnabled     = chXml->getBoolAttribute("ccEnabled", true);
-        ch.noteLengthMs  = juce::jlimit(1, 5000, chXml->getIntAttribute("noteLengthMs", 100));
-        ch.phaseOffset   = static_cast<float>(wrapPhase(chXml->getDoubleAttribute("phaseOffset", 0.0)));
+                                                               getInt("waveShape", static_cast<int>(d.waveShape.load()))));
+        ch.midiNote      = juce::jlimit(0, 127, getInt("midiNote",    d.midiNote.load()));
+        ch.midiChannel   = juce::jlimit(1, 16,  getInt("midiChannel", d.midiChannel.load()));
+        ch.ccNumber      = juce::jlimit(0, 127, getInt("ccNumber",    d.ccNumber.load()));
+        ch.peakThreshold = juce::jlimit(0.0f, 1.0f, getFloat("peakThreshold", d.peakThreshold.load()));
+        ch.velocityMin   = juce::jlimit(0, 127, getInt("velocityMin", d.velocityMin.load()));
+        ch.velocityMax   = juce::jlimit(0, 127, getInt("velocityMax", d.velocityMax.load()));
+        ch.noteEnabled   = getBool("noteEnabled", d.noteEnabled.load());
+        ch.ccEnabled     = getBool("ccEnabled",   d.ccEnabled.load());
+        ch.noteLengthMs  = juce::jlimit(1, 5000, getInt("noteLengthMs", d.noteLengthMs.load()));
+        ch.phaseOffset   = static_cast<float>(wrapPhase(getFloat("phaseOffset", d.phaseOffset.load())));
     }
 }
 

@@ -91,6 +91,7 @@ struct LFOChannel
     // Audio-thread state
     double phase            = 0.0;    // offset already applied, 0..1
     float  appliedOffset    = 0.0f;   // the phaseOffset value that phase currently includes
+    WaveShape appliedShape  = WaveShape::Sine;
     float  currentValue     = 0.0f;   // -1 to 1 normalised
     float  prevValue        = 0.0f;
     bool   noteIsOn         = false;
@@ -101,6 +102,8 @@ struct LFOChannel
     float  lastRandomTarget = 0.0f;
     float  nextRandomTarget = 0.0f;
     int    lastCCValue      = -1;     // -1 forces first emission; gates CC to value-changes only
+    int    lastCCChannel    = -1;     // where lastCCValue was sent; a new destination resends
+    int    lastCCNumber     = -1;
 
     std::mt19937 rng{ std::random_device{}() };
 
@@ -108,6 +111,7 @@ struct LFOChannel
     void reset()
     {
         appliedOffset    = phaseOffset.load(std::memory_order_relaxed);
+        appliedShape     = waveShape.load(std::memory_order_relaxed);
         phase            = wrapPhase(static_cast<double>(appliedOffset));
         currentValue     = 0.0f;
         prevValue        = 0.0f;
@@ -125,6 +129,7 @@ struct LFOChannel
     {
         releaseNote(midiOut, sampleIndex);
         appliedOffset = phaseOffset.load(std::memory_order_relaxed);
+        appliedShape  = waveShape.load(std::memory_order_relaxed);
         phase         = wrapPhase(static_cast<double>(appliedOffset));
         prevValue     = 0.0f;
         currentValue  = valueAt(phase);
@@ -179,12 +184,20 @@ struct LFOChannel
 
         const auto shape = waveShape.load(std::memory_order_relaxed);
 
-        // An offset change shifts the running phase; it isn't a cycle wrap, so it triggers nothing
+        // An offset or shape change makes the wave jump; the jump isn't a crossing or a wrap,
+        // so it mustn't trigger a note
+        bool jumped = false;
         const float offset = phaseOffset.load(std::memory_order_relaxed);
         if (offset != appliedOffset)
         {
             phase = wrapPhase(phase + static_cast<double>(offset - appliedOffset));
             appliedOffset = offset;
+            jumped = true;
+        }
+        if (shape != appliedShape)
+        {
+            appliedShape = shape;
+            jumped = true;
         }
 
         prevValue = currentValue;
@@ -214,6 +227,8 @@ struct LFOChannel
         }
 
         currentValue = valueAt(phase);
+        if (jumped)
+            prevValue = currentValue;
 
         const int velMin = velocityMin.load(std::memory_order_relaxed);
         const int velMax = velocityMax.load(std::memory_order_relaxed);
@@ -221,16 +236,22 @@ struct LFOChannel
         // --- MIDI CC output (continuous, shape-dependent, range VMin–VMax) ---
         if (ccEnabled.load(std::memory_order_relaxed))
         {
+            const int ccChannel = midiChannel.load(std::memory_order_relaxed);
+            const int ccNum     = ccNumber.load(std::memory_order_relaxed);
             float norm  = (currentValue + 1.0f) * 0.5f; // 0..1
             int ccVal   = juce::jlimit(0, 127,
                 velMin + static_cast<int>(std::round(norm * (float)(velMax - velMin))));
-            if (ccVal != lastCCValue)
+            if (ccVal != lastCCValue || ccChannel != lastCCChannel || ccNum != lastCCNumber)
             {
-                auto msg = juce::MidiMessage::controllerEvent(midiChannel.load(std::memory_order_relaxed),
-                                                              ccNumber.load(std::memory_order_relaxed), ccVal);
-                midiOut.addEvent(msg, sampleIndex);
-                lastCCValue = ccVal;
+                midiOut.addEvent(juce::MidiMessage::controllerEvent(ccChannel, ccNum, ccVal), sampleIndex);
+                lastCCValue   = ccVal;
+                lastCCChannel = ccChannel;
+                lastCCNumber  = ccNum;
             }
+        }
+        else
+        {
+            lastCCValue = -1;   // send the current value as soon as CC is switched back on
         }
 
         // --- MIDI note trigger at peak ---

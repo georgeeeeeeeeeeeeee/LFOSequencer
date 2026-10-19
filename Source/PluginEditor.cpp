@@ -313,7 +313,9 @@ LFOChannelPanel::LFOChannelPanel(LFOChannel& channel, int channelIndex)
     setupTitle(freqLabel,  "HZ");
     setupBox(freqBox, {});
     freqBox.onTextChange = [this]{
-        float v = juce::jlimit(0.01f, 100.0f, freqBox.getText().getFloatValue());
+        float v = freqBox.getText().getFloatValue();
+        if (!std::isfinite(v)) v = ch.frequencyHz.load();   // e.g. "nan" or "inf": keep the old value
+        v = juce::jlimit(0.01f, 100.0f, v);
         ch.frequencyHz = v;
         freqBox.setText(juce::String(v, 3), juce::dontSendNotification);
     };
@@ -321,8 +323,9 @@ LFOChannelPanel::LFOChannelPanel(LFOChannel& channel, int channelIndex)
     setupTitle(phaseLabel, "PHASE");
     setupBox(phaseBox, {});
     phaseBox.onTextChange = [this]{
-        float deg = juce::jlimit(0.0f, 360.0f,
-            phaseBox.getText().retainCharacters("0123456789.-").getFloatValue());
+        float deg = phaseBox.getText().retainCharacters("0123456789.-").getFloatValue();
+        if (!std::isfinite(deg)) deg = ch.phaseOffset.load() * 360.0f;
+        deg = juce::jlimit(0.0f, 360.0f, deg);
         ch.phaseOffset = deg / 360.0f;
         phaseBox.setText(phaseText(deg / 360.0f), juce::dontSendNotification);
     };
@@ -346,7 +349,9 @@ LFOChannelPanel::LFOChannelPanel(LFOChannel& channel, int channelIndex)
     setupTitle(threshLabel, "THR");
     setupBox(thrBox, {});
     thrBox.onTextChange = [this]{
-        float v = juce::jlimit(0.0f, 1.0f, thrBox.getText().getFloatValue());
+        float v = thrBox.getText().getFloatValue();
+        if (!std::isfinite(v)) v = ch.peakThreshold.load();
+        v = juce::jlimit(0.0f, 1.0f, v);
         ch.peakThreshold = v;
         thrBox.setText(juce::String(v, 2), juce::dontSendNotification);
     };
@@ -523,7 +528,7 @@ LFOSequencerEditor::LFOSequencerEditor(LFOSequencerProcessor& p)
     startTimerHz(10);
     setOpaque(true);
     setResizable(true, true);
-    setResizeLimits(580, 600, 1000, 900);
+    setResizeLimits(580, 680, 1000, 900);   // below 680 px the second row of boxes collapses
     setSize(680, 680);
 }
 
