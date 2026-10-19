@@ -104,6 +104,7 @@ struct LFOChannel
     int    lastCCValue      = -1;     // -1 forces first emission; gates CC to value-changes only
     int    lastCCChannel    = -1;     // where lastCCValue was sent; a new destination resends
     int    lastCCNumber     = -1;
+    int    samplesSinceCC   = 1 << 30;
 
     std::mt19937 rng{ std::random_device{}() };
 
@@ -119,6 +120,7 @@ struct LFOChannel
         lastRandomTarget = 0.0f;
         nextRandomTarget = randomFloat();
         lastCCValue      = -1;
+        samplesSinceCC   = 1 << 30;
         if (noteIsOn)
             noteOffCountdown = 0;
         publishDisplay();
@@ -241,8 +243,13 @@ struct LFOChannel
             float norm  = (currentValue + 1.0f) * 0.5f; // 0..1
             int ccVal   = juce::jlimit(0, 127,
                 velMin + static_cast<int>(std::round(norm * (float)(velMax - velMin))));
-            if (ccVal != lastCCValue || ccChannel != lastCCChannel || ccNum != lastCCNumber)
+            // At most one CC per millisecond; a held-back value goes out once the gap has passed
+            const int minGap = juce::jmax(1, static_cast<int>(sampleRate * 0.001));
+            samplesSinceCC = juce::jmin(samplesSinceCC + 1, minGap);
+            if ((ccVal != lastCCValue || ccChannel != lastCCChannel || ccNum != lastCCNumber)
+                && samplesSinceCC >= minGap)
             {
+                samplesSinceCC = 0;
                 midiOut.addEvent(juce::MidiMessage::controllerEvent(ccChannel, ccNum, ccVal), sampleIndex);
                 lastCCValue   = ccVal;
                 lastCCChannel = ccChannel;
