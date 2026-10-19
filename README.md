@@ -62,6 +62,13 @@ Copy the generated `LFO Sequencer.vst3` from `build/LFOSequencer_artefacts/Relea
 
 Then rescan plugins in your host.
 
+## Using it in Ableton Live
+
+1. Load **LFO Sequencer** on a MIDI track.
+2. Create a second MIDI track with the instrument you want to play.
+3. In that track's MIDI settings, set **MIDI From** to the LFO Sequencer track, and pick **LFO Sequencer** in the box below it.
+4. Arm or monitor the instrument track and the notes will play.
+
 ## Usage
 
 Configure each channel by double-clicking a value box, typing a value and pressing Enter:

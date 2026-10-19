@@ -13,7 +13,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 - **Threshold near 1.0 now fires once per cycle.** Before, a threshold at or near 1.0 on Sine or Triangle fired only when a sample happened to land exactly on the peak. Depending on the rate this was every cycle, some cycles or none at all (for example, Triangle at 7.3 Hz never fired). The threshold is now capped just below the peak, by a margin that depends on the rate.
 - **Changing CC# or MIDI channel, or switching CC back on, sends the current CC value immediately.** Before, nothing was sent until the wave value changed, which could take minutes on slow Square or S&H channels.
 
-With phase offset 0 and a threshold below about 0.99, MIDI output is identical to the previous version event for event. This was tested on all 6 shapes at several rates.
+With phase offset 0 and a threshold below about 0.99, notes are identical to the previous version event for event. This was tested on all 6 shapes at several rates.
 
 ### Fixed
 - **Stuck notes.** Every way a sounding note can be dropped now sends its note-off:
