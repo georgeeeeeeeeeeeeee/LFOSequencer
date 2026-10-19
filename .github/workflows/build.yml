@@ -1,0 +1,134 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PLUGINVAL_VERSION: v1.0.4
+  VST3SDK_TAG: v3.8.1_build_84
+  PLUGIN: build/LFOSequencer_artefacts/Release/VST3/LFO Sequencer.vst3
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (universal)
+            os: macos-latest
+            configure_args: ''
+            pluginval_zip: pluginval_macOS.zip
+            pluginval: pluginval/pluginval.app/Contents/MacOS/pluginval
+            validator: validator-bin/validator
+            artifact: LFOSequencer-mac
+          - name: Windows (x64)
+            os: windows-latest
+            configure_args: -A x64
+            pluginval_zip: pluginval_Windows.zip
+            pluginval: pluginval/pluginval.exe
+            validator: validator-bin/validator.exe
+            artifact: LFOSequencer-win
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # JUCE is downloaded at the version pinned in CMakeLists.txt
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.configure_args }}
+
+      - name: Build VST3
+        run: cmake --build build --config Release --target LFOSequencer_VST3 --parallel
+
+      - name: Check universal binary and ad-hoc signature
+        if: runner.os == 'macOS'
+        run: |
+          BIN="$PLUGIN/Contents/MacOS/LFO Sequencer"
+          lipo -info "$BIN"
+          lipo "$BIN" -verify_arch arm64 x86_64
+          codesign -v --deep --strict --verbose=2 "$PLUGIN"
+
+      # Steinberg's validator catches things pluginval alone doesn't; pluginval runs it when given its path
+      - name: Cache VST3 validator
+        id: cache-validator
+        uses: actions/cache@v6
+        with:
+          path: validator-bin
+          key: vst3-validator-${{ env.VST3SDK_TAG }}-${{ runner.os }}
+
+      - name: Build VST3 validator
+        if: steps.cache-validator.outputs.cache-hit != 'true'
+        run: |
+          git clone --quiet --depth 1 --branch "$VST3SDK_TAG" --recursive --shallow-submodules \
+              https://github.com/steinbergmedia/vst3sdk.git vst3sdk
+          cmake -S vst3sdk -B vst3sdk-build -DCMAKE_BUILD_TYPE=Release \
+              -DSMTG_ENABLE_VST3_PLUGIN_EXAMPLES=OFF -DSMTG_ENABLE_VST3_HOSTING_EXAMPLES=OFF \
+              -DSMTG_ENABLE_VSTGUI_SUPPORT=OFF -DSMTG_RUN_VST_VALIDATOR=OFF
+          cmake --build vst3sdk-build --config Release --target validator --parallel
+          mkdir -p validator-bin
+          cp vst3sdk-build/bin/Release/validator* validator-bin/
+
+      - name: Download pluginval
+        run: |
+          curl -fsSL -o pluginval.zip \
+              "https://github.com/Tracktion/pluginval/releases/download/$PLUGINVAL_VERSION/${{ matrix.pluginval_zip }}"
+          mkdir pluginval
+          cd pluginval && cmake -E tar xf ../pluginval.zip
+
+      - name: pluginval (strictness 10)
+        run: |
+          mkdir -p pluginval-logs
+          "${{ matrix.pluginval }}" --strictness-level 10 --verbose \
+              --vst3validator "$PWD/${{ matrix.validator }}" \
+              --output-dir pluginval-logs \
+              --validate "$PLUGIN"
+
+      # macos-latest is Apple silicon, so the run above only exercised the arm64 half.
+      # Run again in-process under Rosetta to test the x86_64 half (the validator is arm64-only).
+      - name: pluginval x86_64 under Rosetta (strictness 10)
+        if: runner.os == 'macOS'
+        run: |
+          if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+              echo "::warning::Rosetta isn't available on this runner; x86_64 slice not validated"
+              exit 0
+          fi
+          arch -x86_64 "${{ matrix.pluginval }}" --validate-in-process --strictness-level 10 --verbose \
+              --validate "$PLUGIN"
+
+      - name: Upload pluginval logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pluginval-logs-${{ runner.os }}
+          path: pluginval-logs
+          if-no-files-found: ignore
+
+      # ditto keeps the bundle's permissions and signature intact on macOS
+      - name: Zip plugin
+        run: |
+          mkdir dist
+          if [ "$RUNNER_OS" = "macOS" ]; then
+              ditto -c -k --keepParent "$PLUGIN" "dist/${{ matrix.artifact }}.zip"
+          else
+              (cd "$(dirname "$PLUGIN")" && cmake -E tar cf "$GITHUB_WORKSPACE/dist/${{ matrix.artifact }}.zip" --format=zip "LFO Sequencer.vst3")
+          fi
+
+      - name: Upload plugin
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}.zip
+          if-no-files-found: error
