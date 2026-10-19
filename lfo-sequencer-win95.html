@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LFO Sequencer v1.0</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --win-bg: #c0c0c0;
+    --win-light: #ffffff;
+    --win-dark: #808080;
+    --win-darker: #404040;
+    --win-face: #c0c0c0;
+    --title-blue: #000080;
+    --title-text: #ffffff;
+    --field-bg: #ffffff;
+    --field-sunken-light: #808080;
+    --field-sunken-dark: #404040;
+    --sky-top: #4a7fb5;
+    --sky-mid: #87b8de;
+    --sky-bottom: #b8d4e8;
+    --cloud-white: rgba(255, 255, 255, 0.85);
+    --accent-rose: #c06080;
+    --accent-sky: #5090c0;
+    --wave-color: #000080;
+    --wave-glow: rgba(0, 0, 128, 0.3);
+    --active-green: #008000;
+    --note-flash: #ff6060;
+  }
+
+  body {
+    background: linear-gradient(180deg, var(--sky-top) 0%, var(--sky-mid) 40%, var(--sky-bottom) 70%, #d4e4f0 100%);
+    min-height: 100vh;
+    font-family: 'IBM Plex Mono', monospace;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* ── Clouds ── */
+  .cloud-layer {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+    z-index: 0;
+    overflow: hidden;
+  }
+
+  .cloud {
+    position: absolute;
+    background: var(--cloud-white);
+    border-radius: 50%;
+    filter: blur(20px);
+    animation: drift linear infinite;
+  }
+
+  @keyframes drift {
+    from { transform: translateX(-200px); }
+    to { transform: translateX(calc(100vw + 200px)); }
+  }
+
+  /* ── Win95 raised border (outset) ── */
+  .raised {
+    border: 2px solid;
+    border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light);
+  }
+
+  /* ── Win95 sunken border (inset) ── */
+  .sunken {
+    border: 2px solid;
+    border-color: var(--field-sunken-dark) var(--win-light) var(--win-light) var(--field-sunken-dark);
+  }
+
+  /* ── Main window ── */
+  .win-window {
+    position: relative;
+    z-index: 10;
+    max-width: 1150px;
+    margin: 20px auto;
+    background: var(--win-face);
+    border: 2px solid;
+    border-color: var(--win-light) var(--win-darker) var(--win-darker) var(--win-light);
+    box-shadow: 4px 4px 0 rgba(0,0,0,0.3);
+  }
+
+  .win-titlebar {
+    background: linear-gradient(90deg, var(--title-blue), #1084d0);
+    padding: 3px 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    user-select: none;
+  }
+
+  .win-titlebar-icon {
+    width: 16px; height: 16px;
+    background: linear-gradient(135deg, #90b0ff, #4060c0);
+    border: 1px solid #3050a0;
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: white;
+    font-weight: bold;
+  }
+
+  .win-titlebar-text {
+    flex: 1;
+    color: var(--title-text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+
+  .win-btn {
+    width: 16px; height: 14px;
+    background: var(--win-face);
+    border: 2px solid;
+    border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: bold;
+    color: #000;
+    cursor: pointer;
+    line-height: 1;
+  }
+
+  .win-btn:active {
+    border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark);
+  }
+
+  /* ── Menu bar ── */
+  .win-menubar {
+    background: var(--win-face);
+    padding: 2px 4px;
+    border-bottom: 1px solid var(--win-dark);
+    display: flex;
+    gap: 0;
+    font-size: 11px;
+  }
+
+  .win-menu-item {
+    padding: 2px 8px;
+    cursor: pointer;
+    color: #000;
+  }
+
+  .win-menu-item:hover {
+    background: var(--title-blue);
+    color: white;
+  }
+
+  .win-menu-item u { text-decoration: underline; }
+
+  /* ── Status bar ── */
+  .win-statusbar {
+    background: var(--win-face);
+    border-top: 2px solid;
+    border-color: var(--field-sunken-dark) transparent transparent var(--field-sunken-dark);
+    padding: 3px 6px;
+    display: flex;
+    gap: 4px;
+    font-size: 10px;
+    color: #000;
+  }
+
+  .status-section {
+    border: 1px solid;
+    border-color: var(--field-sunken-dark) var(--win-light) var(--win-light) var(--field-sunken-dark);
+    padding: 1px 6px;
+    flex: 1;
+  }
+
+  .status-section.fixed { flex: none; width: 140px; }
+
+  /* ── Content area ── */
+  .win-content {
+    padding: 6px;
+    background: var(--win-face);
+  }
+
+  /* ── Channel panels ── */
+  .channels-container {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .channel-panel {
+    background: var(--win-face);
+    border: 2px solid;
+    border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light);
+    padding: 4px;
+    display: grid;
+    grid-template-columns: 32px 1fr;
+    grid-template-rows: auto auto auto;
+    gap: 3px;
+    opacity: 0.55;
+    transition: opacity 0.3s;
+  }
+
+  .channel-panel.active {
+    opacity: 1;
+    background: linear-gradient(135deg, var(--win-face) 85%, rgba(135,184,222,0.15) 100%);
+  }
+
+  .ch-number {
+    grid-row: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'VT323', monospace;
+    font-size: 28px;
+    color: var(--title-blue);
+    border-right: 1px solid var(--win-dark);
+    padding-right: 4px;
+    opacity: 0.4;
+    transition: opacity 0.3s;
+  }
+
+  .channel-panel.active .ch-number { opacity: 1; }
+
+  .ch-top-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  /* ── Win95-style buttons ── */
+  .w95-button {
+    background: var(--win-face);
+    border: 2px solid;
+    border-color: var(--win-light) var(--win-dark) var(--win-dark) var(--win-light);
+    padding: 2px 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    cursor: pointer;
+    color: #000;
+    white-space: nowrap;
+  }
+
+  .w95-button:active, .w95-button.pressed {
+    border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark);
+    padding: 3px 7px 1px 9px;
+  }
+
+  .w95-button.on {
+    background: var(--title-blue);
+    color: white;
+    border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark);
+  }
+
+  .w95-button.green-on {
+    background: var(--active-green);
+    color: white;
+    border-color: var(--win-dark) var(--win-light) var(--win-light) var(--win-dark);
+  }
+
+  /* ── Dropdown ── */
+  .w95-select {
+    background: var(--field-bg);
+    border: 2px solid;
+    border-color: var(--field-sunken-dark) var(--win-light) var(--win-light) var(--field-sunken-dark);
+    padding: 2px 4px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: #000;
+    outline: none;
+    cursor: pointer;
+  }
+
+  /* ── Waveform display (sunken field) ── */
+  .waveform-wrap {
+    border: 2px solid;
+    border-color: var(--field-sunken-dark) var(--win-light) var(--win-light) var(--field-sunken-dark);
+    background: #f0f4f8;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .waveform-wrap canvas {
+    width: 100%;
+    height: 50px;
+    display: block;
+  }
+
+  /* Cloud texture inside waveform */
+  .waveform-cloud {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(180deg,
+      rgba(135,184,222,0.08) 0%,
+      rgba(180,212,232,0.05) 50%,
+      rgba(255,255,255,0.02) 100%
+    );
+    pointer-events: none;
+  }
+
+  /* Peak flash overlay */
+  .peak-flash {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: radial-gradient(ellipse at 90% 30%, rgba(255,96,96,0.3), transparent 60%);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.1s;
+  }
+
+  .peak-flash.flash { opacity: 1; transition: opacity 0s; }
+
+  /* ── Knobs row ── */
+  .knobs-row {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 2px;
+  }
+
+  .knob-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    padding: 2px;
+  }
+
+  .knob-label {
+    font-size: 8px;
+    color: #000;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  .knob-container {
+    width: 38px; height: 38px;
+    cursor: ns-resize;
+    position: relative;
+  }
+
+  .knob-container canvas { width: 100%; height: 100%; }
+
+  .knob-value {
+    font-size: 9px;
+    color: #000;
+    font-weight: 500;
+    height: 12px;
+    font-family: 'VT323', monospace;
+    font-size: 13px;
+  }
+
+  /* ── Group box (etched border) ── */
+  .group-box {
+    border: 1px solid var(--win-dark);
+    border-top-color: var(--win-dark);
+    border-left-color: var(--win-dark);
+    border-bottom-color: var(--win-light);
+    border-right-color: var(--win-light);
+    padding: 4px;
+    position: relative;
+    margin-top: 6px;
+  }
+
+  .group-box-label {
+    position: absolute;
+    top: -7px;
+    left: 8px;
+    background: var(--win-face);
+    padding: 0 4px;
+    font-size: 10px;
+    color: #000;
+  }
+
+  /* ── Toolbar ── */
+  .toolbar {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    border-bottom: 1px solid var(--win-dark);
+    background: var(--win-face);
+  }
+
+  .toolbar-separator {
+    width: 2px;
+    background: var(--win-dark);
+    border-right: 1px solid var(--win-light);
+    margin: 0 2px;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 700px) {
+    .knobs-row { grid-template-columns: repeat(4, 1fr); }
+    .win-window { margin: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Floating clouds background -->
+<div class="cloud-layer" id="cloudLayer"></div>
+
+<!-- Main Window -->
+<div class="win-window">
+  <div class="win-titlebar">
+    <div class="win-titlebar-icon">~</div>
+    <div class="win-titlebar-text">LFO Sequencer v1.0 — [8 channels]</div>
+    <div class="win-btn">_</div>
+    <div class="win-btn">□</div>
+    <div class="win-btn">×</div>
+  </div>
+
+  <div class="win-menubar">
+    <div class="win-menu-item"><u>F</u>ile</div>
+    <div class="win-menu-item"><u>E</u>dit</div>
+    <div class="win-menu-item"><u>V</u>iew</div>
+    <div class="win-menu-item"><u>M</u>IDI</div>
+    <div class="win-menu-item"><u>H</u>elp</div>
+  </div>
+
+  <div class="toolbar">
+    <button class="w95-button" onclick="resetAll()" title="Reset all LFO phases">⟲ Reset</button>
+    <div class="toolbar-separator"></div>
+    <button class="w95-button" id="allOnBtn" onclick="toggleAll(true)">All On</button>
+    <button class="w95-button" id="allOffBtn" onclick="toggleAll(false)">All Off</button>
+    <div class="toolbar-separator"></div>
+    <button class="w95-button" id="primeBtn" onclick="setPrimeRatios()" title="Set prime-ratio frequencies for generative patterns">♾ Primes</button>
+  </div>
+
+  <div class="win-content">
+    <div class="channels-container" id="channelsContainer"></div>
+  </div>
+
+  <div class="win-statusbar">
+    <div class="status-section" id="statusMain">Ready</div>
+    <div class="status-section fixed" id="statusMidi">MIDI: Idle</div>
+    <div class="status-section fixed" id="statusActive">Active: 1/8</div>
+  </div>
+</div>
+
+<script>
+// ── Constants ──
+const WAVE_SHAPES = ['Sine', 'Square', 'Triangle', 'Saw', 'Random', 'S&&H'];
+const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const PRIME_HZ = [0.1, 0.13, 0.17, 0.23, 0.29, 0.31, 0.37, 0.41];
+
+function midiName(n) { return NOTE_NAMES[n % 12] + (Math.floor(n / 12) - 1); }
+
+// ── Channel Model ──
+const defaults = [
+  { hz: 0.1,  note: 60, cc: 20, wave: 0, active: true  },
+  { hz: 0.15, note: 64, cc: 21, wave: 0, active: false },
+  { hz: 0.2,  note: 67, cc: 22, wave: 2, active: false },
+  { hz: 0.25, note: 72, cc: 23, wave: 1, active: false },
+  { hz: 0.3,  note: 48, cc: 24, wave: 3, active: false },
+  { hz: 0.08, note: 55, cc: 25, wave: 4, active: false },
+  { hz: 0.4,  note: 62, cc: 26, wave: 5, active: false },
+  { hz: 0.05, note: 69, cc: 27, wave: 0, active: false },
+];
+
+class Channel {
+  constructor(i) {
+    Object.assign(this, {
+      active: defaults[i].active,
+      hz: defaults[i].hz, wave: defaults[i].wave,
+      note: defaults[i].note, ch: 1, cc: defaults[i].cc,
+      velMin: 64, velMax: 127, noteLen: 100, thresh: 0.95,
+      noteOn: true, ccOn: true,
+      phase: 0, value: 0, prev: 0,
+      history: new Float32Array(240).fill(0), hIdx: 0,
+      sah: 0, rA: 0, rB: Math.random() * 2 - 1,
+      peakFlash: 0, midiFlash: 0, noteCount: 0
+    });
+  }
+
+  computeWave(p) {
+    switch(this.wave) {
+      case 0: return Math.sin(p * Math.PI * 2);
+      case 1: return p < 0.5 ? 1 : -1;
+      case 2: return p < 0.25 ? p*4 : p < 0.75 ? 2-p*4 : p*4-4;
+      case 3: return 2*p - 1;
+      case 4: return this.rA + (this.rB - this.rA) * p;
+      case 5: return this.sah;
+      default: return 0;
+    }
+  }
+
+  tick(dt) {
+    if (!this.active) return;
+    this.prev = this.value;
+    this.phase += this.hz * dt;
+    let wrapped = false;
+    if (this.phase >= 1) {
+      this.phase -= 1; wrapped = true;
+      if (this.wave === 4) { this.rA = this.rB; this.rB = Math.random()*2-1; }
+      if (this.wave === 5) { this.sah = Math.random()*2-1; }
+    }
+    this.value = this.computeWave(this.phase);
+
+    const atPeak = (this.wave <= 2 || this.wave === 4)
+      ? (this.prev < this.thresh && this.value >= this.thresh)
+      : wrapped;
+    if (atPeak && this.noteOn) { this.peakFlash = 1; this.noteCount++; }
+    this.peakFlash = Math.max(0, this.peakFlash - dt * 5);
+    if (this.ccOn) this.midiFlash = Math.abs(this.value);
+
+    this.history[this.hIdx % 240] = this.value;
+    this.hIdx++;
+  }
+
+  reset() { this.phase = 0; this.hIdx = 0; this.history.fill(0); this.noteCount = 0; }
+}
+
+const channels = Array.from({length: 8}, (_, i) => new Channel(i));
+
+// ── Knob Class ──
+class Knob {
+  constructor(canvas, min, max, value, step, onChange) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.min = min; this.max = max; this.value = value;
+    this.step = step; this.onChange = onChange;
+    this.dragging = false;
+    canvas.width = 76; canvas.height = 76;
+
+    canvas.addEventListener('pointerdown', e => {
+      this.dragging = true; this.startY = e.clientY; this.startVal = this.value;
+      canvas.setPointerCapture(e.pointerId);
+    });
+    canvas.addEventListener('pointermove', e => {
+      if (!this.dragging) return;
+      const dy = this.startY - e.clientY;
+      const range = this.max - this.min;
+      const sens = e.shiftKey ? 500 : 120;
+      let v = this.startVal + (dy / sens) * range;
+      v = Math.round(v / this.step) * this.step;
+      v = Math.max(this.min, Math.min(this.max, v));
+      if (v !== this.value) { this.value = v; this.onChange(v); }
+    });
+    canvas.addEventListener('pointerup', () => this.dragging = false);
+  }
+
+  draw() {
+    const {ctx} = this;
+    const w = 76, cx = 38, cy = 38, r = 24;
+    ctx.clearRect(0, 0, w, w);
+
+    const sa = Math.PI * 0.75, ea = Math.PI * 2.25;
+    const norm = (this.value - this.min) / (this.max - this.min);
+    const va = sa + norm * (ea - sa);
+
+    // Outer bevel (raised)
+    ctx.beginPath(); ctx.arc(cx, cy, r+4, 0, Math.PI*2);
+    ctx.fillStyle = '#c0c0c0'; ctx.fill();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(cx, cy, r+3, Math.PI*0.8, Math.PI*1.8); ctx.stroke();
+    ctx.strokeStyle = '#808080';
+    ctx.beginPath(); ctx.arc(cx, cy, r+3, Math.PI*1.8, Math.PI*0.8); ctx.stroke();
+
+    // Track (sunken)
+    ctx.beginPath(); ctx.arc(cx, cy, r, sa, ea);
+    ctx.strokeStyle = '#a0a0a0'; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.stroke();
+    ctx.strokeStyle = '#808080'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(cx, cy, r, sa, ea); ctx.stroke();
+
+    // Value arc
+    if (norm > 0.005) {
+      ctx.beginPath(); ctx.arc(cx, cy, r, sa, va);
+      ctx.strokeStyle = '#000080'; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.stroke();
+    }
+
+    // Notch
+    const nx = cx + Math.cos(va) * (r - 10);
+    const ny = cy + Math.sin(va) * (r - 10);
+    const nx2 = cx + Math.cos(va) * (r - 2);
+    const ny2 = cy + Math.sin(va) * (r - 2);
+    ctx.beginPath(); ctx.moveTo(nx, ny); ctx.lineTo(nx2, ny2);
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 2; ctx.stroke();
+  }
+}
+
+// ── Generate clouds ──
+function generateClouds() {
+  const layer = document.getElementById('cloudLayer');
+  for (let i = 0; i < 12; i++) {
+    const cloud = document.createElement('div');
+    cloud.className = 'cloud';
+    const size = 100 + Math.random() * 250;
+    const top = Math.random() * 70;
+    const dur = 40 + Math.random() * 80;
+    const delay = -Math.random() * dur;
+    cloud.style.cssText = `
+      width: ${size}px; height: ${size * 0.5}px;
+      top: ${top}%; opacity: ${0.3 + Math.random() * 0.4};
+      animation-duration: ${dur}s; animation-delay: ${delay}s;
+      filter: blur(${15 + Math.random() * 20}px);
+    `;
+    layer.appendChild(cloud);
+  }
+}
+generateClouds();
+
+// ── Build UI ──
+const container = document.getElementById('channelsContainer');
+
+const ui = channels.map((ch, i) => {
+  const panel = document.createElement('div');
+  panel.className = `channel-panel ${ch.active ? 'active' : ''}`;
+
+  panel.innerHTML = `
+    <div class="ch-number">${i + 1}</div>
+    <div style="display:flex;flex-direction:column;gap:3px">
+      <div class="ch-top-row">
+        <button class="w95-button ${ch.active ? 'green-on' : ''}" data-act="power">⏻ ON</button>
+        <select class="w95-select" data-act="wave">
+          ${WAVE_SHAPES.map((s,j) => `<option value="${j}" ${j===ch.wave?'selected':''}>${s}</option>`).join('')}
+        </select>
+        <button class="w95-button ${ch.noteOn ? 'on' : ''}" data-act="note">♪ Note</button>
+        <button class="w95-button ${ch.ccOn ? 'on' : ''}" data-act="cc">⇕ CC</button>
+        <span style="flex:1"></span>
+        <span style="font-size:9px;color:#808080;font-family:'VT323',monospace;font-size:12px" data-info="notes">Notes: 0</span>
+      </div>
+
+      <div class="waveform-wrap">
+        <div class="waveform-cloud"></div>
+        <canvas class="wave-canvas"></canvas>
+        <div class="peak-flash" data-flash></div>
+      </div>
+
+      <div class="knobs-row">
+        <div class="knob-group">
+          <div class="knob-label">Hz</div>
+          <div class="knob-container"><canvas data-knob="hz"></canvas></div>
+          <div class="knob-value" data-val="hz">${ch.hz.toFixed(3)}</div>
+        </div>
+        <div class="knob-group">
+          <div class="knob-label">Note</div>
+          <div class="knob-container"><canvas data-knob="note"></canvas></div>
+          <div class="knob-value" data-val="note">${midiName(ch.note)}</div>
+        </div>
+        <div class="knob-group">
+          <div class="knob-label">Chan</div>
+          <div class="knob-container"><canvas data-knob="ch"></canvas></div>
+          <div class="knob-value" data-val="ch">${ch.ch}</div>
+        </div>
+        <div class="knob-group">
+          <div class="knob-label">CC#</div>
+          <div class="knob-container"><canvas data-knob="cc"></canvas></div>
+          <div class="knob-value" data-val="cc">${ch.cc}</div>
+        </div>
+        <div class="knob-group">
+          <div class="knob-label">VelMin</div>
+          <div class="knob-container"><canvas data-knob="velMin"></canvas></div>
+          <div class="knob-value" data-val="velMin">${ch.velMin}</div>
+        </div>
+        <div class="knob-group">
+          <div class="knob-label">VelMax</div>
+          <div class="knob-container"><canvas data-knob="velMax"></canvas></div>
+          <div class="knob-value" data-val="velMax">${ch.velMax}</div>
+        </div>
+        <div class="knob-group">
+          <div class="knob-label">NoteMs</div>
+          <div class="knob-container"><canvas data-knob="noteLen"></canvas></div>
+          <div class="knob-value" data-val="noteLen">${ch.noteLen}</div>
+        </div>
+        <div class="knob-group">
+          <div class="knob-label">Thresh</div>
+          <div class="knob-container"><canvas data-knob="thresh"></canvas></div>
+          <div class="knob-value" data-val="thresh">${ch.thresh.toFixed(2)}</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  container.appendChild(panel);
+
+  // Bind controls
+  const q = s => panel.querySelector(s);
+  const qa = s => panel.querySelectorAll(s);
+
+  q('[data-act="power"]').onclick = function() {
+    ch.active = !ch.active;
+    this.classList.toggle('green-on', ch.active);
+    panel.classList.toggle('active', ch.active);
+    updateStatus();
+  };
+  q('[data-act="wave"]').onchange = function() { ch.wave = +this.value; };
+  q('[data-act="note"]').onclick = function() {
+    ch.noteOn = !ch.noteOn; this.classList.toggle('on', ch.noteOn);
+  };
+  q('[data-act="cc"]').onclick = function() {
+    ch.ccOn = !ch.ccOn; this.classList.toggle('on', ch.ccOn);
+  };
+
+  // Knobs
+  const knobs = {};
+  const mk = (sel, min, max, val, step, key, fmt) => {
+    const k = new Knob(q(`[data-knob="${sel}"]`), min, max, val, step, v => {
+      ch[key] = v;
+      q(`[data-val="${sel}"]`).textContent = fmt ? fmt(v) : v;
+    });
+    knobs[sel] = k;
+    return k;
+  };
+
+  mk('hz', 0.001, 5, ch.hz, 0.001, 'hz', v => v.toFixed(3));
+  mk('note', 0, 127, ch.note, 1, 'note', v => midiName(v));
+  mk('ch', 1, 16, ch.ch, 1, 'ch', v => v);
+  mk('cc', 0, 127, ch.cc, 1, 'cc', v => v);
+  mk('velMin', 0, 127, ch.velMin, 1, 'velMin', v => v);
+  mk('velMax', 0, 127, ch.velMax, 1, 'velMax', v => v);
+  mk('noteLen', 10, 5000, ch.noteLen, 10, 'noteLen', v => v);
+  mk('thresh', 0.1, 1.0, ch.thresh, 0.01, 'thresh', v => v.toFixed(2));
+
+  return {
+    panel, knobs,
+    waveCanvas: q('.wave-canvas'),
+    flashEl: q('[data-flash]'),
+    notesEl: q('[data-info="notes"]')
+  };
+});
+
+// ── Draw waveform ──
+function drawWave(canvas, ch, flashEl) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const w = rect.width, h = rect.height;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Grid
+  ctx.strokeStyle = 'rgba(0, 0, 128, 0.08)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([2, 4]);
+  ctx.beginPath();
+  ctx.moveTo(0, h/2); ctx.lineTo(w, h/2);
+  for (let x = 0; x < w; x += 40) { ctx.moveTo(x, 0); ctx.lineTo(x, h); }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  if (!ch.active || ch.hIdx < 2) return;
+
+  // Threshold line
+  if (ch.noteOn) {
+    const ty = h/2 - ch.thresh * (h/2 - 3);
+    ctx.strokeStyle = 'rgba(192, 96, 128, 0.35)';
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(0, ty); ctx.lineTo(w, ty); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Waveform path
+  ctx.beginPath();
+  for (let i = 0; i < 240; i++) {
+    const idx = (ch.hIdx - 240 + i + 240*240) % 240;
+    const x = (i/240) * w;
+    const y = h/2 - ch.history[idx] * (h/2 - 3);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+
+  // Shadow
+  ctx.strokeStyle = 'rgba(0, 0, 128, 0.15)';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+
+  // Main line
+  ctx.strokeStyle = `rgba(0, 0, 128, ${0.6 + ch.peakFlash * 0.4})`;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // End dot
+  const lastIdx = (ch.hIdx - 1 + 240*240) % 240;
+  const ey = h/2 - ch.history[lastIdx] * (h/2 - 3);
+  ctx.beginPath();
+  ctx.arc(w - 3, ey, 3 + ch.peakFlash * 3, 0, Math.PI*2);
+  ctx.fillStyle = ch.peakFlash > 0.5 ? '#ff4040' : '#000080';
+  ctx.fill();
+
+  // Flash overlay
+  flashEl.classList.toggle('flash', ch.peakFlash > 0.7);
+}
+
+// ── Status ──
+function updateStatus() {
+  const active = channels.filter(c => c.active).length;
+  document.getElementById('statusActive').textContent = `Active: ${active}/8`;
+}
+
+// ── Animation ──
+let lastT = performance.now();
+let totalNotes = 0;
+
+function animate(now) {
+  const dt = Math.min((now - lastT) / 1000, 0.05);
+  lastT = now;
+
+  let frameNotes = 0;
+  channels.forEach((ch, i) => {
+    const prevCount = ch.noteCount;
+    ch.tick(dt);
+    if (ch.noteCount > prevCount) frameNotes += ch.noteCount - prevCount;
+    drawWave(ui[i].waveCanvas, ch, ui[i].flashEl);
+    ui[i].notesEl.textContent = `Notes: ${ch.noteCount}`;
+  });
+
+  if (frameNotes > 0) {
+    totalNotes += frameNotes;
+    document.getElementById('statusMidi').textContent = `MIDI: ${totalNotes} notes`;
+  }
+
+  // Redraw knobs
+  ui.forEach(u => Object.values(u.knobs).forEach(k => k.draw()));
+
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+
+// ── Toolbar actions ──
+function resetAll() {
+  channels.forEach(c => c.reset());
+  totalNotes = 0;
+  document.getElementById('statusMain').textContent = 'Phases reset';
+  document.getElementById('statusMidi').textContent = 'MIDI: Idle';
+  setTimeout(() => document.getElementById('statusMain').textContent = 'Ready', 2000);
+}
+
+function toggleAll(on) {
+  channels.forEach((ch, i) => {
+    ch.active = on;
+    ui[i].panel.classList.toggle('active', on);
+    ui[i].panel.querySelector('[data-act="power"]').classList.toggle('green-on', on);
+  });
+  updateStatus();
+}
+
+function setPrimeRatios() {
+  channels.forEach((ch, i) => {
+    ch.hz = PRIME_HZ[i];
+    ui[i].knobs.hz.value = ch.hz;
+    ui[i].panel.querySelector('[data-val="hz"]').textContent = ch.hz.toFixed(3);
+  });
+  document.getElementById('statusMain').textContent = 'Prime ratios set — generative mode';
+  setTimeout(() => document.getElementById('statusMain').textContent = 'Ready', 3000);
+}
+
+updateStatus();
+</script>
+</body>
+</html>

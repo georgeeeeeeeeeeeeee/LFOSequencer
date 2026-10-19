@@ -1,0 +1,29 @@
+# Build output
+build/
+build-*/
+cmake-build-*/
+out/
+*.vst3/
+
+# Projucer / JUCE generated
+Builds/
+JuceLibraryCode/
+
+# Xcode / Visual Studio user data
+xcuserdata/
+*.xcuserstate
+DerivedData/
+.vs/
+*.user
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+
+# Local Claude Code settings (machine-specific permissions)
+.claude/settings.local.json
+
+# Release packaging
+dist/
+*.zip
