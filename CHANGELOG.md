@@ -47,7 +47,11 @@ With phase offset 0 and a threshold below about 0.99, notes are identical to the
 - **Docs:** added the original brief (`docs/BRIEF-original.md`) and the recovered Win95 UI design plan (`docs/DESIGN.md`).
 - **Licence:** now AGPLv3. The copyright notice in the plugin metadata and README says so.
 - **Plugin description** now says 4-channel.
-- **Build:** the macOS-only post-build step is wrapped in `if(APPLE)` so Windows builds don't fail.
+- **Build:**
+  - the macOS-only post-build step is wrapped in `if(APPLE)` so Windows builds don't fail;
+  - JUCE 8.0.12 is downloaded automatically at a pinned version (`-DJUCE_PATH` still selects a local copy), and `build.sh` no longer needs JUCE installed;
+  - macOS builds are ad-hoc signed as the last build step.
+- **CI:** a GitHub Actions workflow builds macOS (universal) and Windows (x64), runs pluginval at strictness 10 with the Steinberg VST3 validator, also checks the Intel half of the Mac build under Rosetta, and uploads both plugins.
 
 ### Validation
 - pluginval 1.0.4 passes at strictness 5 and 10, with the Steinberg VST3 validator (SDK 3.8.1) enabled.
