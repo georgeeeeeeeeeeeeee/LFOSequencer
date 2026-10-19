@@ -1,35 +1,37 @@
 # LFO Sequencer VST3
 
-An 8-channel LFO-to-MIDI sequencer plugin for Ableton Live (and any VST3 host). Each channel generates a low-frequency oscillator that sends MIDI note triggers at wave peaks and continuous MIDI CC values.
+A 4-channel LFO-to-MIDI sequencer plugin for Ableton Live (and any VST3 host). Each channel runs a low-frequency oscillator that sends MIDI note triggers when the wave crosses a threshold, plus continuous MIDI CC.
 
 ## Features
 
-- **8 independent LFO channels**, each with:
+- **4 independent LFO channels**, each with:
   - 6 wave shapes: Sine, Square, Triangle, Saw, Random (smoothly interpolated), Sample & Hold
-  - Frequency range: 0.001 Hz (16 min cycle) to 20 Hz
-  - Configurable MIDI note output (note number, channel, velocity range, note length)
-  - Configurable MIDI CC output (CC number, channel)
-  - Independent enable/disable for note and CC output
-  - Peak threshold control for note trigger sensitivity
-  - Real-time waveform visualisation
+  - Frequency from 0.01 Hz (100-second cycle) to 100 Hz
+  - Phase offset, to stagger channels against each other
+  - MIDI note output: note, channel, velocity range, note length
+  - MIDI CC output: CC number, scaled to the same V Min–V Max range
+  - Independent on/off for note and CC output
+  - Threshold that sets where on the wave notes fire
+  - Live waveform display with playhead and threshold line
+- **Sync** restarts every channel at its phase offset; **Spread** spaces the active channels' offsets evenly; **Reset All** restarts everything
+- **State saving**: all settings are saved with your project
 
-- **State saving** — all parameters saved with your Ableton project
-- **MIDI effect** — routes through Ableton's MIDI chain, no audio I/O
+LFOs run freely in Hz; they don't follow the host tempo or transport.
 
 ## Architecture
 
 ```
-LFOChannel.h     — Single LFO: wave generation, peak detection, MIDI output
-LFOEngine.h      — Manages 8 channels, delegates processing
+LFOChannel.h     — Single LFO: wave generation, threshold detection, MIDI output
+LFOEngine.h      — Manages the channels, Sync/Spread/Reset
 PluginProcessor  — JUCE AudioProcessor, state save/load
-PluginEditor     — UI: waveform displays, rotary knobs, toggles
+PluginEditor     — UI: waveform displays, editable value boxes, Win95 look
 ```
 
 ## Building
 
 ### Prerequisites
 
-1. **JUCE Framework** (v7.x recommended)
+1. **JUCE Framework** 8.x
    ```bash
    git clone https://github.com/juce-framework/JUCE.git ~/JUCE
    ```
@@ -39,75 +41,65 @@ PluginEditor     — UI: waveform displays, rotary knobs, toggles
 3. **C++ compiler** with C++17 support:
    - macOS: Xcode command line tools (`xcode-select --install`)
    - Windows: Visual Studio 2019+ with C++ workload
-   - Linux: GCC 9+ or Clang 10+
 
 ### Build
 
 ```bash
-# Set JUCE path (default: ~/JUCE)
-export JUCE_PATH=~/JUCE
-
-# Run the build script
-./build.sh
+cmake -B build -DJUCE_PATH=~/JUCE -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
 ```
 
-Or manually:
-
-```bash
-mkdir build && cd build
-cmake .. -DJUCE_PATH=~/JUCE -DCMAKE_BUILD_TYPE=Release
-cmake --build . --config Release
-```
+On macOS this produces a universal (arm64 + x86_64) binary for macOS 12 and later.
 
 ### Install
 
-Copy the generated `.vst3` to your plugin folder:
+Copy the generated `LFO Sequencer.vst3` from `build/LFOSequencer_artefacts/Release/VST3/` to your plugin folder:
 
 | Platform | Path |
 |----------|------|
 | macOS    | `~/Library/Audio/Plug-Ins/VST3/` |
 | Windows  | `C:\Program Files\Common Files\VST3\` |
-| Linux    | `~/.vst3/` |
 
-Then rescan plugins in Ableton Live (Options → Preferences → Plug-ins).
+Then rescan plugins in your host.
 
-## Usage in Ableton Live
+## Usage
 
-1. Create a MIDI track
-2. Add "LFO Sequencer" as a MIDI effect
-3. Route the MIDI output to another track's instrument
-4. Configure each LFO channel:
-   - Set **Hz** for cycle speed (try 0.05–0.5 for slow generative patterns)
-   - Choose a **wave shape**
-   - Set the **Note** to trigger and **CC#** to modulate
-   - Use **MIDI channel** to target different instruments
-   - Adjust **velocity range** for dynamic variation
-   - Set **note length** for how long each trigger sustains
+Configure each channel by double-clicking a value box, typing a value and pressing Enter:
 
-### Routing Tips
+- Set **Hz** for cycle speed (try 0.05–0.5 for slow generative patterns)
+- Choose a **wave shape**
+- Set the **Note** to trigger (a number or a name like `C4` or `F#2`) and the **CC#** to modulate
+- Use **Chan** to target different instruments
+- Adjust **V Min / V Max** for velocity and CC range
+- Set **Len ms** for how long each note sustains
 
-- **Single instrument modulation**: Set all channels to the same MIDI channel, different CC numbers → modulate multiple parameters of one synth
-- **Multi-instrument triggering**: Set channels to different MIDI channels → trigger different instruments from one plugin
-- **Generative patterns**: Use prime-number frequency ratios (e.g., 0.1, 0.13, 0.17, 0.23 Hz) for non-repeating polyrhythmic patterns
-- **Ambient drones**: Very low frequencies (0.005–0.02 Hz) with long note lengths create slowly evolving harmonic fields
+### Tips
+
+- **Single instrument modulation**: set all channels to the same MIDI channel with different CC numbers to modulate several parameters of one synth
+- **Multi-instrument triggering**: set channels to different MIDI channels
+- **Generative patterns**: use prime-number frequency ratios (e.g. 0.1, 0.13, 0.17, 0.23 Hz) for patterns that take a long time to repeat
+- **Ambient drones**: very low frequencies (0.01–0.02 Hz) with long note lengths give slowly evolving harmonic fields
 
 ## Parameters Per Channel
 
 | Parameter | Range | Description |
 |-----------|-------|-------------|
-| Active    | On/Off | Enable/disable this channel |
+| ON        | On/Off | Enable/disable this channel |
 | Wave      | Sine/Square/Triangle/Saw/Random/S&H | LFO wave shape |
-| Hz        | 0.001–20 | LFO frequency |
-| Note      | 0–127 (C-1 to G9) | MIDI note to trigger at peak |
-| Ch        | 1–16 | MIDI channel |
+| Hz        | 0.01–100 | LFO frequency |
+| Phase     | 0–360° | Phase offset |
+| Note      | 0–127 (C-1 to G9) | MIDI note to trigger |
+| Chan      | 1–16 | MIDI channel for notes and CC |
+| Thr       | 0.00–1.00 | Threshold the wave must rise through to fire a note (Sine, Triangle, Random). Square fires on its rising edge; Saw and S&H fire once per cycle |
 | CC#       | 0–127 | MIDI CC number for continuous output |
-| VelMin    | 0–127 | Minimum velocity |
-| VelMax    | 0–127 | Maximum velocity |
-| NoteLen   | 10–5000 ms | Note on duration |
-| Thresh    | 0.1–1.0 | Peak detection threshold |
-| Note enable | On/Off | Enable MIDI note output |
-| CC enable | On/Off | Enable MIDI CC output |
+| V Min     | 0–127 | Minimum note velocity and CC value |
+| V Max     | 0–127 | Maximum note velocity and CC value |
+| Len ms    | 1–5000 | Note length |
+| Vel       | display | Velocity a note would get right now |
+| Note / CC | On/Off | Enable note output / CC output |
 
 ## License
 
-Personal use. Built with JUCE under their personal license terms.
+Copyright © 2026 Lever Studios. Licensed under the GNU Affero General Public License v3.0 (AGPLv3). See `LICENSE`.
+
+Built with [JUCE](https://juce.com), used under the AGPLv3.
