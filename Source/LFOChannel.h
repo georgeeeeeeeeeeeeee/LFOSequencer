@@ -67,6 +67,9 @@ inline double wrapPhase(double p) { return p - std::floor(p); }
 struct LFOChannel
 {
     // Parameters — written by the UI thread and state restore, read by the audio thread
+    static constexpr float kMinHz = 0.01f;
+    static constexpr float kMaxHz = 100.0f;
+
     std::atomic<float>     frequencyHz   { 0.1f };   // default 0.1 Hz (10 second cycle)
     std::atomic<WaveShape> waveShape     { WaveShape::Sine };
     std::atomic<int>       midiNote      { 60 };     // C4

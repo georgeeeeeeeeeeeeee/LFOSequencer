@@ -84,6 +84,8 @@ public:
     void timerCallback() override;
 
 private:
+    void showRatesMenu();
+
     static constexpr int DISPLAY_CHANNELS = 4;
 
     LFOSequencerProcessor& processorRef;
@@ -92,6 +94,7 @@ private:
     juce::OwnedArray<LFOChannelPanel> channelPanels;
     juce::TextButton syncBtn   { "Sync" };
     juce::TextButton spreadBtn { "Spread" };
+    juce::TextButton ratesBtn  { "Rates" };
     juce::TextButton resetBtn  { "Reset All" };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LFOSequencerEditor)

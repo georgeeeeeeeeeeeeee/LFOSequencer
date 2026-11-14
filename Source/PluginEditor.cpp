@@ -315,7 +315,7 @@ LFOChannelPanel::LFOChannelPanel(LFOChannel& channel, int channelIndex)
     freqBox.onTextChange = [this]{
         float v = freqBox.getText().getFloatValue();
         if (!std::isfinite(v)) v = ch.frequencyHz.load();   // e.g. "nan" or "inf": keep the old value
-        v = juce::jlimit(0.01f, 100.0f, v);
+        v = juce::jlimit(LFOChannel::kMinHz, LFOChannel::kMaxHz, v);
         ch.frequencyHz = v;
         freqBox.setText(juce::String(v, 3), juce::dontSendNotification);
     };
@@ -522,6 +522,9 @@ LFOSequencerEditor::LFOSequencerEditor(LFOSequencerProcessor& p)
     setupBtn(spreadBtn);
     spreadBtn.onClick = [this]{ processorRef.getEngine().spreadPhases(); };
 
+    setupBtn(ratesBtn);
+    ratesBtn.onClick = [this]{ showRatesMenu(); };
+
     setupBtn(resetBtn);
     resetBtn.onClick = [this]{ processorRef.getEngine().requestReset(); };
 
@@ -597,6 +600,35 @@ void LFOSequencerEditor::paint(juce::Graphics& g)
     g.drawText("MIDI out active",          statusBar.reduced(4, 0), juce::Justification::centredRight);
 }
 
+// Rate spread: one pick sets every active channel's rate relative to the first
+void LFOSequencerEditor::showRatesMenu()
+{
+    using RS = LFOEngine::RateSpread;
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader("Rates from the first active channel");
+    menu.addItem(1, "Multiples  (x1, x2, x3, x4)");
+    menu.addItem(2, "Divisions  (/1, /2, /3, /4)");
+    menu.addSeparator();
+    menu.addItem(3, "Steps of 1/2  (x1, x1.5, x2, x2.5)");
+    menu.addItem(4, "Steps of 1/3  (x1, x1.33, x1.67, x2)");
+    menu.addItem(5, "Steps of 1/4  (x1, x1.25, x1.5, x1.75)");
+    menu.addItem(6, "Steps of 1/8  (x1, x1.125, x1.25, x1.375)");
+    menu.addSeparator();
+    menu.addItem(7, "Primes  (x1, x1.3, x1.7, x2.3)");
+    menu.addItem(8, "Deviate  (each within 10%, random)");
+
+    juce::Component::SafePointer<LFOSequencerEditor> safe(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&ratesBtn),
+                       [safe](int result)
+    {
+        if (safe == nullptr || result <= 0) return;
+        static constexpr RS modes[] = { RS::Multiples, RS::Divisions, RS::StepsHalf, RS::StepsThird,
+                                        RS::StepsQuarter, RS::StepsEighth, RS::Primes, RS::Deviate };
+        safe->processorRef.getEngine().spreadRates(modes[result - 1]);
+    });
+}
+
 void LFOSequencerEditor::resized()
 {
     auto bounds = getLocalBounds();
@@ -606,9 +638,10 @@ void LFOSequencerEditor::resized()
 
     // Button row at bottom
     auto btnBar = bounds.removeFromBottom(30);
-    const int btnW = btnBar.getWidth() / 3;
+    const int btnW = btnBar.getWidth() / 4;
     syncBtn.setBounds(btnBar.removeFromLeft(btnW).reduced(4, 3));
     spreadBtn.setBounds(btnBar.removeFromLeft(btnW).reduced(4, 3));
+    ratesBtn.setBounds(btnBar.removeFromLeft(btnW).reduced(4, 3));
     resetBtn.setBounds(btnBar.reduced(4, 3));
 
     // Channel panels — equal height

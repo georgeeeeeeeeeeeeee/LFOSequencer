@@ -3,6 +3,11 @@
 All notable changes to LFO Sequencer are recorded here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Rates button.** One pick from its menu sets every active channel's rate as a ratio of the first active channel's rate, then syncs them so the cycles start together. Choices: Multiples (x1, x2, x3, x4), Divisions (/1, /2, /3, /4), Steps of 1/2, 1/3, 1/4 or 1/8, Primes (x1, x1.3, x1.7, x2.3) and Deviate (each within 10% of the first, at random). Rates stay within 0.01–100 Hz.
+
 ## [1.0.0] - 2026-10-20
 
 First public release, for macOS 12+ (universal: Apple silicon and Intel) and 64-bit Windows 10/11.
