@@ -3,7 +3,19 @@
 All notable changes to LFO Sequencer are recorded here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/).
 
-## [Unreleased]: 1.0.0
+## [1.0.0] - 2026-10-20
+
+First public release, for macOS 12+ (universal: Apple silicon and Intel) and 64-bit Windows 10/11.
+
+- 4 LFO channels, each playing MIDI notes when its wave crosses a threshold and sending MIDI CC as it moves
+- 6 wave shapes, rates from 0.01 Hz to 100 Hz, phase offsets with Sync and Spread
+- Settings are saved with your project
+- Ready-to-install zips for macOS and Windows, each with an install guide
+- Every build is checked with pluginval at its strictest level and Steinberg's VST3 validator
+
+The macOS plugin is ad-hoc signed and not notarised, so macOS asks you to allow it once; see the install guide.
+
+The sections below list what changed since the private build of 14 Apr 2026.
 
 ### Changed (you may hear these)
 - **Phase offset now applies to everything.** With a non-zero offset:
@@ -51,7 +63,11 @@ With phase offset 0 and a threshold below about 0.99, notes are identical to the
   - the macOS-only post-build step is wrapped in `if(APPLE)` so Windows builds don't fail;
   - JUCE 8.0.12 is downloaded automatically at a pinned version (`-DJUCE_PATH` still selects a local copy), and `build.sh` no longer needs JUCE installed;
   - macOS builds are ad-hoc signed as the last build step.
-- **CI:** a GitHub Actions workflow builds macOS (universal) and Windows (x64), runs pluginval at strictness 10 with the Steinberg VST3 validator, also checks the Intel half of the Mac build under Rosetta, and uploads both plugins.
+- **Windows:** the Visual C++ runtime is linked statically, so the plugin loads on PCs without the Visual C++ Redistributable installed. CI fails if the plugin ever depends on those runtime DLLs again.
+- **CI:** a GitHub Actions workflow builds macOS (universal) and Windows (x64), runs pluginval at strictness 10 with the Steinberg VST3 validator, and also checks the Intel half of the Mac build under Rosetta.
+- **Release packages:** CI builds `LFOSequencer-<version>-mac.zip` and `-win.zip`, each containing the plugin, an install guide (`README.txt`, from `packaging/`) and the licence. Pushing a `v*` tag that matches the version in `CMakeLists.txt` drafts a GitHub release with both zips and SHA-256 checksums.
+- **README** rewritten for people installing the plugin, including the macOS Gatekeeper step.
+- **LICENSE:** the full AGPLv3 text, verbatim from gnu.org.
 
 ### Validation
 - pluginval 1.0.4 passes at strictness 5 and 10, with the Steinberg VST3 validator (SDK 3.8.1) enabled.

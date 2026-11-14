@@ -30,14 +30,14 @@ jobs:
             pluginval_zip: pluginval_macOS.zip
             pluginval: pluginval/pluginval.app/Contents/MacOS/pluginval
             validator: validator-bin/validator
-            artifact: LFOSequencer-mac
+            platform: mac
           - name: Windows (x64)
             os: windows-latest
             configure_args: -A x64
             pluginval_zip: pluginval_Windows.zip
             pluginval: pluginval/pluginval.exe
             validator: validator-bin/validator.exe
-            artifact: LFOSequencer-win
+            platform: win
 
     defaults:
       run:
@@ -45,6 +45,18 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+
+      # The version lives in CMakeLists.txt; a release tag must match it
+      - name: Read version
+        run: |
+          VERSION=$(tr -d '\r' < CMakeLists.txt | sed -nE 's/^project\(LFOSequencer VERSION ([0-9]+\.[0-9]+\.[0-9]+)\)$/\1/p')
+          if [ -z "$VERSION" ]; then echo "::error::Couldn't read the version from CMakeLists.txt"; exit 1; fi
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$VERSION" ]; then
+              echo "::error::Tag $GITHUB_REF_NAME doesn't match CMakeLists.txt version $VERSION"
+              exit 1
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Version $VERSION"
 
       # JUCE is downloaded at the version pinned in CMakeLists.txt
       - name: Configure
@@ -60,6 +72,18 @@ jobs:
           lipo -info "$BIN"
           lipo "$BIN" -verify_arch arm64 x86_64
           codesign -v --deep --strict --verbose=2 "$PLUGIN"
+
+      # The MSVC runtime is linked statically, so users don't need the Visual C++ Redistributable
+      - name: Check no Visual C++ runtime DLL dependency
+        if: runner.os == 'Windows'
+        run: |
+          VS=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -property installationPath)
+          DUMPBIN=$(find "$(cygpath -u "$VS")/VC/Tools/MSVC" -path '*/bin/Hostx64/x64/dumpbin.exe' | head -1)
+          "$DUMPBIN" -nologo -dependents "$PLUGIN/Contents/x86_64-win/LFO Sequencer.vst3" | tee deps.txt
+          if grep -iE 'msvcp[0-9]+|vcruntime[0-9]+' deps.txt; then
+              echo "::error::Plugin depends on the Visual C++ runtime DLLs"
+              exit 1
+          fi
 
       # Steinberg's validator catches things pluginval alone doesn't; pluginval runs it when given its path
       - name: Cache VST3 validator
@@ -116,19 +140,101 @@ jobs:
           path: pluginval-logs
           if-no-files-found: ignore
 
-      # ditto keeps the bundle's permissions and signature intact on macOS
-      - name: Zip plugin
+      # Release package: the plugin, an install guide and the licence, in a versioned folder
+      - name: Package
         run: |
-          mkdir dist
+          NAME="LFOSequencer-$VERSION-${{ matrix.platform }}"
+          STAGE="dist/$NAME"
+          mkdir -p "$STAGE"
+          tr -d '\r' < "packaging/README-${{ matrix.platform }}.txt" | sed "s/@VERSION@/$VERSION/g" > "$STAGE/README.txt"
+          tr -d '\r' < LICENSE > "$STAGE/LICENSE.txt"
           if [ "$RUNNER_OS" = "macOS" ]; then
-              ditto -c -k --keepParent "$PLUGIN" "dist/${{ matrix.artifact }}.zip"
+              # ditto keeps the bundle's permissions and signature intact
+              ditto "$PLUGIN" "$STAGE/LFO Sequencer.vst3"
+              ditto -c -k --keepParent "$STAGE" "dist/$NAME.zip"
           else
-              (cd "$(dirname "$PLUGIN")" && cmake -E tar cf "$GITHUB_WORKSPACE/dist/${{ matrix.artifact }}.zip" --format=zip "LFO Sequencer.vst3")
+              for f in README.txt LICENSE.txt; do sed -i 's/$/\r/' "$STAGE/$f"; done
+              cp -R "$PLUGIN" "$STAGE/"
+              (cd dist && cmake -E tar cf "$NAME.zip" --format=zip "$NAME")
           fi
+          echo "PACKAGE=dist/$NAME.zip" >> "$GITHUB_ENV"
+          ls -la dist
 
-      - name: Upload plugin
+      - name: Check package
+        run: |
+          rm -rf pkgcheck && mkdir pkgcheck && cd pkgcheck
+          if [ "$RUNNER_OS" = "macOS" ]; then ditto -x -k "../$PACKAGE" .; else cmake -E tar xf "../$PACKAGE"; fi
+          find . -maxdepth 2 | sort
+          DIR="LFOSequencer-$VERSION-${{ matrix.platform }}"
+          for f in "$DIR/README.txt" "$DIR/LICENSE.txt"; do
+              if [ ! -s "$f" ]; then echo "::error::$f missing or empty"; exit 1; fi
+          done
+          if [ ! -d "$DIR/LFO Sequencer.vst3" ]; then echo "::error::plugin missing from package"; exit 1; fi
+          if grep -n '@VERSION@' "$DIR/README.txt"; then echo "::error::version placeholder left in README.txt"; exit 1; fi
+          if [ "$RUNNER_OS" = "macOS" ]; then codesign -v --deep --strict --verbose=2 "$DIR/LFO Sequencer.vst3"; fi
+
+      - name: Upload package
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.artifact }}
-          path: dist/${{ matrix.artifact }}.zip
+          path: ${{ env.PACKAGE }}
+          archive: false
           if-no-files-found: error
+
+  # Tags only: collect both packages into a draft release, to be checked and published by hand
+  release:
+    name: Draft GitHub release
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: LFOSequencer-*
+          path: dist
+          merge-multiple: true
+          skip-decompress: true   # the packages are zips; keep them as they are
+
+      - name: Checksums
+        run: |
+          cd dist
+          ls -la
+          test "$(ls LFOSequencer-*.zip | wc -l)" -eq 2
+          sha256sum LFOSequencer-*.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Release notes
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          {
+            echo "Download the zip for your computer below. Each contains the plugin, an install guide (\`README.txt\`) and the licence. There's nothing to compile."
+            echo
+            echo "- **macOS** 12 or later, Apple silicon and Intel: \`LFOSequencer-$VERSION-mac.zip\`"
+            echo "- **Windows** 10 or 11, 64-bit: \`LFOSequencer-$VERSION-win.zip\`"
+            echo
+            echo "**macOS users:** this plugin is not notarised by Apple and not signed with an Apple Developer ID (it has an ad-hoc signature), so macOS blocks it the first time. The install guide in the zip, and the [README](https://github.com/$GITHUB_REPOSITORY#the-macos-security-warning), explain the one-time step to allow it."
+            echo
+            # The version's summary from CHANGELOG.md, up to its first ### subsection
+            awk -v v="$VERSION" '
+              $0 ~ "^## \\[" v "\\]" { on = 1; next }
+              on && /^##/ { exit }
+              on { print }
+            ' CHANGELOG.md | grep -v '^The sections below list'
+            echo
+            echo "Full list of changes: [CHANGELOG.md](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/CHANGELOG.md)"
+          } > notes.md
+          cat notes.md
+
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+              gh release upload "$GITHUB_REF_NAME" dist/LFOSequencer-*.zip dist/SHA256SUMS.txt --clobber
+          else
+              gh release create "$GITHUB_REF_NAME" dist/LFOSequencer-*.zip dist/SHA256SUMS.txt \
+                  --draft --verify-tag --title "LFO Sequencer ${GITHUB_REF_NAME#v}" --notes-file notes.md
+          fi
