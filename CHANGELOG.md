@@ -5,15 +5,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ## [Unreleased]
 
-### Added
-- **Rates button.** One pick from its menu sets every active channel's rate as a ratio of the first active channel's rate, then syncs them so the cycles start together. Choices: Multiples (x1, x2, x3, x4), Divisions (/1, /2, /3, /4), Steps of 1/2, 1/3, 1/4 or 1/8, Primes (x1, x1.3, x1.7, x2.3) and Deviate (each within 10% of the first, at random). Rates stay within 0.01–100 Hz.
-
-## [1.0.0] - 2026-10-20
+## [1.0.0] - 2026-11-20
 
 First public release, for macOS 12+ (universal: Apple silicon and Intel) and 64-bit Windows 10/11.
 
 - 4 LFO channels, each playing MIDI notes when its wave crosses a threshold and sending MIDI CC as it moves
 - 6 wave shapes, rates from 0.01 Hz to 100 Hz, phase offsets with Sync and Spread
+- **Rates** button: one pick sets every active channel's rate as a ratio of the first (multiples, divisions, steps, primes, or a random deviation), then syncs them so the cycles start together
 - Settings are saved with your project
 - Ready-to-install zips for macOS and Windows, each with an install guide
 - Every build is checked with pluginval at its strictest level and Steinberg's VST3 validator

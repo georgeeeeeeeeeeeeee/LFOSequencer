@@ -79,6 +79,7 @@ LFOs run freely in Hz. They don't follow the host tempo or transport, and they k
   - Independent on/off for notes and CC
   - Live waveform display with playhead and threshold line
 - **Sync** restarts every channel at its phase offset, **Spread** spaces the active channels' offsets evenly, and **Reset All** restarts everything
+- **Rates** sets every active channel's rate as a ratio of the first active channel's (Multiples, Divisions, Steps of 1/2 to 1/8, Primes, or Deviate: each within 10% of the first, at random), then syncs them
 - All settings are saved with your project
 
 ### Parameters per channel
